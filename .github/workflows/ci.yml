@@ -1,0 +1,100 @@
+name: Centralized CI/CD Workflow
+
+on:
+  workflow_call:                        # ← This makes it reusable
+    inputs:
+      service-name:
+        required: true
+        type: string
+      eks-deployment-name:
+        required: true
+        type: string
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      AWS_REGION:
+        required: true
+      EKS_CLUSTER_NAME:
+        required: true
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: self-hosted-k8s               # ← Runs on your K8s pod runner
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js           # Adjust for your language
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+  build-and-push:
+    name: Build and Push Image
+    runs-on: self-hosted-k8s
+    needs: lint-and-test               # ← Only runs if tests pass
+    outputs:
+      image-uri: ${{ steps.docker.outputs.image-uri }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build and push Docker image
+        id: docker
+        uses: your-org/devops-platform/.github/actions/docker-build-push@main
+        with:
+          service-name: ${{ inputs.service-name }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+#   deploy:
+#     name: Deploy to EKS
+#     runs-on: self-hosted
+#     needs: build-and-push              # ← Only runs after successful image push
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ secrets.AWS_REGION }}
+
+#       - name: Authenticate to EKS
+#         run: |
+#           aws eks update-kubeconfig \
+#             --region ${{ secrets.AWS_REGION }} \
+#             --name ${{ secrets.EKS_CLUSTER_NAME }}
+
+#       - name: Update image tag in manifest
+#         env:
+#           IMAGE_URI: ${{ needs.build-and-push.outputs.image-uri }}
+#         run: |
+#           sed -i "s|{{IMAGE_TAG}}|$IMAGE_URI|g" k8s/deployment.yml
+
+#       - name: Apply Kubernetes manifests
+#         run: |
+#           kubectl apply -f k8s/deployment.yml
+#           kubectl apply -f k8s/hpa.yml
+#           kubectl apply -f k8s/service.yml
+#           kubectl apply -f k8s/configmap.yml
+
+#       - name: Verify rollout
+#         run: |
+#           kubectl rollout status deployment/${{ inputs.eks-deployment-name }} \
+#             --timeout=120s
