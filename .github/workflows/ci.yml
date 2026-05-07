@@ -22,7 +22,7 @@ on:
 jobs:
   lint-and-test:
     name: Lint and Test
-    runs-on: self-hosted-k8s               # ← Runs on your K8s pod runner
+    runs-on: kadiri-runners-rider              # ← Runs on your K8s pod runner
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
 
   build-and-push:
     name: Build and Push Image
-    runs-on: self-hosted-k8s
+    runs-on: kadiri-runners-rider
     needs: lint-and-test               # ← Only runs if tests pass
     outputs:
       image-uri: ${{ steps.docker.outputs.image-uri }}
@@ -53,7 +53,7 @@ jobs:
 
       - name: Build and push Docker image
         id: docker
-        uses: your-org/devops-platform/.github/actions/docker-build-push@main
+        uses: github.com/khadree/devops-platform-ci@main
         with:
           service-name: ${{ inputs.service-name }}
           aws-region: ${{ secrets.AWS_REGION }}
@@ -62,7 +62,7 @@ jobs:
 
 #   deploy:
 #     name: Deploy to EKS
-#     runs-on: self-hosted
+#     runs-on: kadiri-runners-rider
 #     needs: build-and-push              # ← Only runs after successful image push
 #     steps:
 #       - name: Checkout code
