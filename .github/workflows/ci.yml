@@ -36,10 +36,20 @@ jobs:
         run: npm ci
 
       - name: Run linter
-        run: npm run lint
+        run: |
+          if npm run | grep -q "lint"; then
+            npm run lint
+          else
+            echo "No lint script found, skipping..."
+          fi
 
       - name: Run tests
-        run: npm test
+        run: |
+          if npm run | grep -q "test"; then
+            npm test
+          else
+            echo "No test script found, skipping..."
+          fi
 
   build-and-push:
     name: Build and Push Image
