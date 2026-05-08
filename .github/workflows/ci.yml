@@ -23,7 +23,7 @@ jobs:
   lint-and-test:
     name: Lint and Test
     # runs-on: rider-runner-kadiri              # ← Runs on your K8s pod runner
-    runs-on: driver-runner-kadiri                 # ← Use GitHub-hosted runner for linting/testing
+    runs-on: trip-runner-kadiri                 # ← Use GitHub-hosted runner for linting/testing
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
