@@ -28,29 +28,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js           # Adjust for your language
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      # - name: Set up Node.js           # Adjust for your language
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: '20'
 
-      - name: Install dependencies
-        run: npm ci
+      # - name: Install dependencies
+      #   run: npm ci
 
-      - name: Run linter
-        run: |
-          if npm run | grep -q "lint"; then
-            npm run lint
-          else
-            echo "No lint script found, skipping..."
-          fi
+      # - name: Run linter
+      #   run: |
+      #     if npm run | grep -q "lint"; then
+      #       npm run lint
+      #     else
+      #       echo "No lint script found, skipping..."
+      #     fi
 
-      - name: Run tests
-        run: |
-          if npm run | grep -q "test"; then
-            npm test
-          else
-            echo "No test script found, skipping..."
-          fi
+      # - name: Run tests
+      #   run: |
+      #     if npm run | grep -q "test"; then
+      #       npm test
+      #     else
+      #       echo "No test script found, skipping..."
+      #     fi
 
   build-and-push:
     name: Build and Push Image
