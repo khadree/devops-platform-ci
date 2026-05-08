@@ -22,7 +22,7 @@ on:
 jobs:
   lint-and-test:
     name: Lint and Test
-    runs-on: kadiri-runners-rider              # ← Runs on your K8s pod runner
+    runs-on: rider-runner-kadiri              # ← Runs on your K8s pod runner
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
 
   build-and-push:
     name: Build and Push Image
-    runs-on: kadiri-runners-rider
+    runs-on: rider-runner-kadiri
     needs: lint-and-test               # ← Only runs if tests pass
     outputs:
       image-uri: ${{ steps.docker.outputs.image-uri }}
@@ -62,7 +62,7 @@ jobs:
 
 #   deploy:
 #     name: Deploy to EKS
-#     runs-on: kadiri-runners-rider
+#     runs-on: rider-runner-kadiri
 #     needs: build-and-push              # ← Only runs after successful image push
 #     steps:
 #       - name: Checkout code
