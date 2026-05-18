@@ -71,7 +71,7 @@ jobs:
 
   codeql:
     name: "[Gate 2] CodeQL — Advanced Security & Quality Analysis"
-    runs-on: self-hosted                      # Use a scalable, shared self-hosted pool
+    runs-on: trip-runner-kadiri                      # Use a scalable, shared self-hosted pool
     needs: gitleaks                           # Cost-saving: Only runs if secrets scanner passes
     permissions:
       security-events: write                 # Required to publish findings to GitHub Security tab
@@ -100,7 +100,7 @@ jobs:
   # ══════════════════════════════════════════════════════════════════════════
   trivy-fs:
     name: "[Gate 3] Trivy fs — filesystem CVE scan"
-    runs-on: self-hosted
+    runs-on: trip-runner-kadiri
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
