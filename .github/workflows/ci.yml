@@ -39,7 +39,8 @@ jobs:
   # Runs with full git history (fetch-depth: 0) so no commit is skipped.
   gitleaks:
     name: "[Gate 1] Gitleaks — secret detection"
-    runs-on: trip-runner-kadiri                # ← Use GitHub-hosted runner for Gitleaks (no Docker needed)
+    # runs-on: trip-runner-kadiri                # ← Use GitHub-hosted runner for Gitleaks (no Docker needed)
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code (full history)
         uses: actions/checkout@v4
@@ -71,7 +72,8 @@ jobs:
 
   codeql:
     name: "[Gate 2] CodeQL — Advanced Security & Quality Analysis"
-    runs-on: trip-runner-kadiri                      # Use a scalable, shared self-hosted pool
+    # runs-on: trip-runner-kadiri                      # Use a scalable, shared self-hosted pool
+    runs-on: ubuntu-latest
     needs: gitleaks                           # Cost-saving: Only runs if secrets scanner passes
     permissions:
       security-events: write                 # Required to publish findings to GitHub Security tab
@@ -100,7 +102,9 @@ jobs:
   # ══════════════════════════════════════════════════════════════════════════
   trivy-fs:
     name: "[Gate 3] Trivy fs — filesystem CVE scan"
-    runs-on: trip-runner-kadiri
+    # runs-on: trip-runner-kadiri
+    runs-on: ubuntu-latest
+    needs: codeql                           # Only runs if CodeQL passes
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -134,7 +138,11 @@ jobs:
   lint-and-test:
     name: Lint and Test
     # runs-on: rider-runner-kadiri              # ← Runs on your K8s pod runner
-    runs-on: trip-runner-kadiri                 # ← Use GitHub-hosted runner for linting/testing
+    # runs-on: trip-runner-kadiri                 # ← Use GitHub-hosted runner for linting/testing
+    runs-on: ubuntu-latest
+    needs: trivy-fs                         # Only runs if Trivy filesystem scan passes
+    # outputs:
+    #   image-uri: ${{ steps.docker.outputs.image-uri }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -165,7 +173,8 @@ jobs:
 
   build-and-push:
     name: "Build, scan (Gates 4–5), and push to ECR"
-    runs-on: trip-runner-kadiri
+    # runs-on: trip-runner-kadiri
+    runs-on: ubuntu-latest
     needs: [gitleaks, codeql, trivy-fs, lint-and-test]               # ← Only runs if tests pass
     outputs:
       image-uri: ${{ steps.docker.outputs.image-uri }}
