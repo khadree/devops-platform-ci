@@ -9,6 +9,16 @@ on:
       eks-deployment-name:
         required: false
         type: string
+      language:
+        description: "CodeQL language (javascript, python, java, go, ruby, cpp)"
+        required: false
+        type: string
+        default: "javascript"
+      trivy-severity:
+        description: "Comma-separated Trivy severity levels that fail the scan"
+        required: false
+        type: string
+        default: "CRITICAL,HIGH"
     secrets:
       AWS_ACCESS_KEY_ID:
         required: true
@@ -19,7 +29,108 @@ on:
       EKS_CLUSTER_NAME:
         required: false
 
+# Cancel in-progress runs for the same branch when a new push arrives
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # GATE 1 — Gitleaks: detect secrets in source code and git history
+  # Runs with full git history (fetch-depth: 0) so no commit is skipped.
+  gitleaks:
+    name: "[Gate 1] Gitleaks — secret detection"
+    runs-on: trip-runner-kadiri                # ← Use GitHub-hosted runner for Gitleaks (no Docker needed)
+    steps:
+      - name: Checkout code (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+  # GATE 2 — CodeQL: detect code vulnerabilities and quality issues
+  # codeql:   
+  #   name: "[Gate 2] CodeQL — code analysis"
+  #   runs-on: trip-runner-kadiri                # ← Use GitHub-hosted runner for CodeQL (no Docker needed)
+  #   needs: gitleaks                           # ← Only runs if Gitleaks passes
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+
+  #     - name: Initialize CodeQL
+  #       uses: github/codeql-action/init@v2
+  #       with:
+  #         languages: ${{ inputs.language }}
+
+  #     - name: Perform CodeQL analysis
+  #       uses: github/codeql-action/analyze@v2
+
+  codeql:
+    name: "[Gate 2] CodeQL — Advanced Security & Quality Analysis"
+    runs-on: self-hosted                      # Use a scalable, shared self-hosted pool
+    needs: gitleaks                           # Cost-saving: Only runs if secrets scanner passes
+    permissions:
+      security-events: write                 # Required to publish findings to GitHub Security tab
+      actions: read                          # Required for GitHub Actions internals
+      contents: read                         # Required to check out code safely
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL Engine
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ inputs.language }}
+          queries: security-and-quality       # Catches both exploits AND bad coding practices
+
+      - name: Automatically compile code
+        uses: github/codeql-action/autobuild@v3 # Ensures Java/Go/C++ build correctly
+
+      - name: Execute CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ inputs.language }}" # Prevents multi-language scan collisions
+
+  # GATE 3 — Trivy filesystem scan: CVEs in dependencies BEFORE image build
+  # Catches vulnerable packages in package.json, go.sum, requirements.txt etc.
+  # ══════════════════════════════════════════════════════════════════════════
+  trivy-fs:
+    name: "[Gate 3] Trivy fs — filesystem CVE scan"
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: ${{ inputs.trivy-severity }}
+          output: "trivy-fs-results.txt"
+     
+      - name: Print Trivy Scan Results to Logs
+        if: always()
+        run: cat trivy-fs-results.txt
+
+      - name: Upload Trivy fs scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-${{ inputs.service-name }}-${{ github.sha }}
+          path: trivy-fs-results.txt
+          retention-days: 30
+
+
+
+
   lint-and-test:
     name: Lint and Test
     # runs-on: rider-runner-kadiri              # ← Runs on your K8s pod runner
@@ -53,16 +164,16 @@ jobs:
           fi
 
   build-and-push:
-    name: Build and Push Image
+    name: "Build, scan (Gates 4–5), and push to ECR"
     runs-on: trip-runner-kadiri
-    needs: lint-and-test               # ← Only runs if tests pass
+    needs: [gitleaks, codeql, trivy-fs, lint-and-test]               # ← Only runs if tests pass
     outputs:
       image-uri: ${{ steps.docker.outputs.image-uri }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build and push Docker image
+      - name: Build image, run Trivy image scan, generate SBOM, push to ECR
         id: docker
         uses:  khadree/devops-platform-ci/.github/actions/docker-build-push@main
         with:
@@ -70,6 +181,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          trivy-severity: ${{ inputs.trivy-severity }}
 
 #   deploy:
 #     name: Deploy to EKS
