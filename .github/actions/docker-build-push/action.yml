@@ -85,8 +85,6 @@ runs:
     # Scans the built image for OS and library CVEs.
     # exit-code: "1" means the pipeline fails (and push is skipped) if any
     # CVE matching the severity threshold is found.
-    # FIX 5: This step had incorrect indentation in the original file which
-    # caused the YAML parser to reject the entire action.yml silently.
     - name: "[Gate 4] Trivy — image CVE scan"
       uses: aquasecurity/trivy-action@master
       with:
