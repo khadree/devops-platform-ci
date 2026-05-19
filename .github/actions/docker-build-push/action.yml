@@ -127,6 +127,7 @@ runs:
       shell: bash
       run: |
         docker push "${IMAGE_URI}"
-        docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
         echo "Pushed: ${IMAGE_URI}"
-        echo "Pushed: ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+   #     echo "Pushed: ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+        # docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+        # echo "Pushed: ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
