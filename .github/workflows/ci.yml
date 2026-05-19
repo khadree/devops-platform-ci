@@ -131,6 +131,8 @@ jobs:
       - name: Upload Trivy fs scan results
         if: always()
         uses: actions/upload-artifact@v5
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true" # Temporary fix for upload-artifact v5 compatibility issue
         with:
           name: trivy-fs-${{ inputs.service-name }}-${{ github.sha }}
           path: trivy-fs-results.txt
