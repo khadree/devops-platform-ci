@@ -1,22 +1,20 @@
-name: Docker Build and Push to ECR
-description: Builds a Docker image, tags it with the commit SHA, and pushes to AWS ECR
-  Composite action that builds a Docker image tagged with the commit SHA,
-  runs Gate 4 (Trivy image CVE scan) and Gate 5 (Syft SBOM generation),
-  then pushes to AWS ECR only if both gates pass.
-  Reusable across all services — no duplicated build logic.
+name: "Docker Build, Scan, and Push to ECR"
+
+# are not valid for this field and cause the action to fail to parse.
+description: "Builds a Docker image tagged with commit SHA, runs Gate 4 (Trivy image scan) and Gate 5 (Syft SBOM), then pushes to AWS ECR only if both gates pass."
 
 inputs:
   service-name:
-    description: Name of the ECR repository / service
+    description: "ECR repository name — must match exactly, no slashes"
     required: true
   aws-region:
-    description: AWS region
+    description: "AWS region (e.g. us-east-1)"
     required: true
   aws-access-key-id:
-    description: AWS access key ID
+    description: "AWS IAM access key ID"
     required: true
   aws-secret-access-key:
-    description: AWS secret access key
+    description: "AWS IAM secret access key"
     required: true
   trivy-severity:
     description: "Comma-separated severity levels that fail the image scan"
@@ -25,16 +23,18 @@ inputs:
 
 outputs:
   image-uri:
-    description: Full URI of the pushed image
-    value: ${{ steps.build-push.outputs.image-uri }}
+    description: "Full URI of the pushed image — registry/repo:sha"
+    value: ${{ steps.meta.outputs.image-uri }}
 
 runs:
-  using: composite
+  using: "composite"
   steps:
-      # ── Step 1: Set up Docker Buildx ─────────────────────────────────────────
+
+    # ── Set up Docker Buildx ──────────────────────────────────────────────────
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
+    # ── Authenticate to AWS ───────────────────────────────────────────────────
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -42,11 +42,14 @@ runs:
         aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
         aws-region: ${{ inputs.aws-region }}
 
+    # ── Log in to ECR ─────────────────────────────────────────────────────────
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    # ── Step 4: Compute and export image URI ──────────────────────────────────
+    # ── Compute and export image URI ──────────────────────────────────────────
+    # Writes the full image URI to GITHUB_OUTPUT (for the job-level output)
+    # and to GITHUB_ENV (so all following steps in this action can use it).
     - name: Set image metadata
       id: meta
       shell: bash
@@ -56,14 +59,16 @@ runs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-        echo "image-uri=${IMAGE_URI}"       >> "$GITHUB_OUTPUT"
-        echo "IMAGE_URI=${IMAGE_URI}"       >> "$GITHUB_ENV"
-        echo "ECR_REGISTRY=${ECR_REGISTRY}" >> "$GITHUB_ENV"
-        echo "ECR_REPOSITORY=${ECR_REPOSITORY}" >> "$GITHUB_ENV"
-        echo "IMAGE_TAG=${IMAGE_TAG}"       >> "$GITHUB_ENV"
+        echo "image-uri=${IMAGE_URI}"               >> "$GITHUB_OUTPUT"
+        echo "IMAGE_URI=${IMAGE_URI}"               >> "$GITHUB_ENV"
+        echo "ECR_REGISTRY=${ECR_REGISTRY}"         >> "$GITHUB_ENV"
+        echo "ECR_REPOSITORY=${ECR_REPOSITORY}"     >> "$GITHUB_ENV"
+        echo "IMAGE_TAG=${IMAGE_TAG}"               >> "$GITHUB_ENV"
         echo "Target image URI: ${IMAGE_URI}"
 
-   # ── Step 5: Build Docker image locally ────────────────────────────────────
+    # ── Build Docker image (local only, not yet pushed) ───────────────────────
+    # Tagged with both the commit SHA (immutable, used in k8s manifests)
+    # and `latest` (convenience pointer — pushed alongside SHA tag).
     - name: Build Docker image
       shell: bash
       run: |
@@ -74,9 +79,14 @@ runs:
           -t "${IMAGE_URI}" \
           -t "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest" \
           .
-        echo "Image successfully built locally: ${IMAGE_URI}"
+        echo "Image built locally: ${IMAGE_URI}"
 
-# ── GATE 4: Trivy image scan ──────────────────────────────────────────────
+    # ── GATE 4: Trivy image scan ──────────────────────────────────────────────
+    # Scans the built image for OS and library CVEs.
+    # exit-code: "1" means the pipeline fails (and push is skipped) if any
+    # CVE matching the severity threshold is found.
+    # FIX 5: This step had incorrect indentation in the original file which
+    # caused the YAML parser to reject the entire action.yml silently.
     - name: "[Gate 4] Trivy — image CVE scan"
       uses: aquasecurity/trivy-action@master
       with:
@@ -87,6 +97,11 @@ runs:
         severity: ${{ inputs.trivy-severity }}
         output: "trivy-image-results.txt"
 
+    - name: Print Trivy image scan results to logs
+      if: always()
+      shell: bash
+      run: cat trivy-image-results.txt
+
     - name: Upload Trivy image scan results
       if: always()
       uses: actions/upload-artifact@v4
@@ -95,7 +110,10 @@ runs:
         path: trivy-image-results.txt
         retention-days: 30
 
-  # ── GATE 5: Syft SBOM generation ─────────────────────────────────────────
+    # ── GATE 5: Syft SBOM generation ─────────────────────────────────────────
+    # Generates a Software Bill of Materials (SPDX-JSON) listing every package
+    # in the image. Uploaded as a GitHub Actions artifact (90-day retention).
+    # FIX 5 (continued): Same indentation fix applied here.
     - name: "[Gate 5] Syft — generate SBOM"
       uses: anchore/sbom-action@v0
       with:
@@ -104,14 +122,13 @@ runs:
         output-file: "sbom.spdx.json"
         format: "spdx-json"
 
-
-     # ── Push to ECR ───────────────────────────────────────────────────────────
-    # Only reached if BOTH Gate 4 and Gate 5 pass.
+    # ── Push to ECR ───────────────────────────────────────────────────────────
+    # Only reached if Gate 4 (Trivy image) AND Gate 5 (Syft) both passed.
+    # Pushes the SHA tag (immutable) and latest tag (convenience).
     - name: Push image to ECR
       shell: bash
       run: |
         docker push "${IMAGE_URI}"
         docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
-        echo "Successfully pushed to ECR: ${IMAGE_URI}"
-
-  
+        echo "Pushed: ${IMAGE_URI}"
+        echo "Pushed: ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
