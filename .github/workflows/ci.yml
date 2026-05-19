@@ -147,20 +147,59 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-       # 1. Check if package.json exists and save the result
-      - name: Check for package.json
-        id: check_node
+      # DETECT PROJECT LANGUAGES
+      - name: Check for project languages
+        id: detect_lang
         run: |
+         # Check for Python files or requirements
+          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -n "$(find . -name "*.py" -maxdepth 2 -print -quit)" ]; then
+            echo "has_python=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_python=false" >> $GITHUB_OUTPUT
+            echo "No Python configuration or files found."
+          fi
+          # Check for Node.js files
           if [ -f "package.json" ]; then
             echo "has_node=true" >> $GITHUB_OUTPUT
           else
             echo "has_node=false" >> $GITHUB_OUTPUT
-            echo "No package.json found. Skipping Node.js steps."
+            echo "No package.json found."
           fi
 
-       # 2. Only set up Node if package.json exists
+      # PYTHON STEPS (Runs only if Python is detected)
+      - name: Set up Python
+        if: steps.detect_lang.outputs.has_python == 'true'
+        uses: actions/setup-python@v5
+        with:
+         python-version: '3.11'
+         cache: 'pip'
+
+      - name: Install Python dependencies
+        if: steps.detect_lang.outputs.has_python == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Python linter (flake8)
+        if: steps.detect_lang.outputs.has_python == 'true'
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Run Python tests (pytest)
+        if: steps.detect_lang.outputs.has_python == 'true'
+        run: |
+          # Only run pytest if a tests directory or test files exist to prevent empty suite failures
+          if [ -d "tests" ] || [ -n "$(find . -name "test_*.py" -print -quit)" ]; then
+            pytest
+          else
+             echo "No Python tests found, skipping..."
+          fi
+
+      # NODE.JS STEPS (Runs only if Node.js is detected)
       - name: Set up Node.js
-        if: steps.check_node.outputs.has_node == 'true'
+        if: steps.detect_lang.outputs.has_node == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -168,7 +207,7 @@ jobs:
 
        # 3. Use 'npm install' instead of 'npm ci' if package-lock.json is missing
       - name: Install dependencies
-        if: steps.check_node.outputs.has_node == 'true'
+        if: steps.detect_lang.outputs.has_node == 'true'
         run: |
           if [ -f "package-lock.json" ]; then
             npm ci
@@ -177,7 +216,7 @@ jobs:
           fi
         # 4. Only run linter if package.json exists
       - name: Run linter
-        if: steps.check_node.outputs.has_node == 'true'
+        if: steps.detect_lang.outputs.has_node == 'true'
         run: |
           if npm run | grep -q "lint"; then
             npm run lint
@@ -186,7 +225,7 @@ jobs:
           fi
         # 5. Only run tests if package.json exists
       - name: Run tests
-        if: steps.check_node.outputs.has_node == 'true'
+        if: steps.detect_lang.outputs.has_node == 'true'
         run: |
           if npm run | grep -q "test"; then
             npm test
