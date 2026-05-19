@@ -147,24 +147,46 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+       # 1. Check if package.json exists and save the result
+      - name: Check for package.json
+        id: check_node
+        run: |
+          if [ -f "package.json" ]; then
+            echo "has_node=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_node=false" >> $GITHUB_OUTPUT
+            echo "No package.json found. Skipping Node.js steps."
+          fi
+
+       # 2. Only set up Node if package.json exists
       - name: Set up Node.js
+        if: steps.check_node.outputs.has_node == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          # cache: "npm"
+          cache: "npm"
 
+       # 3. Use 'npm install' instead of 'npm ci' if package-lock.json is missing
       - name: Install dependencies
-        run: npm ci
-
+        if: steps.check_node.outputs.has_node == 'true'
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          else
+            npm install
+          fi
+        # 4. Only run linter if package.json exists
       - name: Run linter
+        if: steps.check_node.outputs.has_node == 'true'
         run: |
           if npm run | grep -q "lint"; then
             npm run lint
           else
             echo "No lint script found, skipping..."
           fi
-
+        # 5. Only run tests if package.json exists
       - name: Run tests
+        if: steps.check_node.outputs.has_node == 'true'
         run: |
           if npm run | grep -q "test"; then
             npm test
