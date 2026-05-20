@@ -94,6 +94,7 @@ runs:
         ignore-unfixed: true
         severity: ${{ inputs.trivy-severity }}
         output: "trivy-image-results.txt"
+        trivyignores: ".trivyignore"
 
     - name: Print Trivy image scan results to logs
       if: always()
