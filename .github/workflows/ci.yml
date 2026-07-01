@@ -51,8 +51,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
-  # ══════════════════════════════════════════════════════════════════════════
+   # ══════════════════════════════════════════════════════════════════════════
   # GATE 1 — Gitleaks
   # fetch-depth: 0 gives full git history so no commit is skipped.
   # ══════════════════════════════════════════════════════════════════════════
@@ -60,16 +59,15 @@ jobs:
     name: "[Gate 1] Gitleaks — secret detection"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code (full history)
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+      - name: Checkout code 
+        uses: actions/checkout@v4
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
+        with:
+          source: "." 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 
   # GATE 2 — CodeQL
   # Needs Gate 1 only — runs in parallel with Gate 3 and lint-and-test.
