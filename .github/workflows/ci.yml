@@ -66,6 +66,7 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         with:
           source: "." 
+          no git: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
